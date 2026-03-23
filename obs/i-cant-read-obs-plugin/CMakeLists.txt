@@ -34,6 +34,11 @@ if(ENABLE_QT)
   )
 endif()
 
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/plugin-main.c)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    src/plugin-main.c
+    src/settings.c
+    src/settings.h
+    src/settings-dialog.cpp
+    src/settings-dialog.hpp)
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
