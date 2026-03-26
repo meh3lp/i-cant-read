@@ -3,6 +3,7 @@
 #include <obs-frontend-api.h>
 #include <util/platform.h>
 #include "settings-dialog.hpp"
+#include <gate-manager.h>
 
 static obs_data_t *cant_read_settings = NULL;
 
@@ -30,6 +31,8 @@ static void cant_read_save_settings(obs_data_t *settings_data)
 	char *path = cant_read_settings_path();
 	obs_data_save_json_safe(settings_data, path, "tmp", "bak");
 	bfree(path);
+	// Reload gates with new config
+	cant_read_gate_reload();
 }
 
 static void cant_read_load_settings(obs_data_t *settings_data)

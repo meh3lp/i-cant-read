@@ -1,0 +1,25 @@
+#version 430 core
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(location = 0) uniform sampler2D u_edge_in;
+
+layout(std140, binding = 1) uniform Params {
+    int u_radius;
+    int u_width;
+    int u_height;
+};
+
+layout(r8, binding = 0) writeonly uniform image2D u_edge_out;
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+    if (gid.x >= u_width || gid.y >= u_height) return;
+    float v = 0.0;
+    for (int dy = -u_radius; dy <= u_radius && v < 0.5; dy++)
+        for (int dx = -u_radius; dx <= u_radius && v < 0.5; dx++) {
+            ivec2 p = clamp(gid + ivec2(dx, dy),
+                            ivec2(0), ivec2(u_width-1, u_height-1));
+            v = max(v, texelFetch(u_edge_in, p, 0).r);
+        }
+    imageStore(u_edge_out, gid, vec4(v));
+}
