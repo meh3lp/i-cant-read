@@ -13,6 +13,8 @@
 // src
 #include "gates.h"
 #include "settings.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 
 static GatePipeline *g_gate = NULL;
 static int g_sock = -1;
@@ -50,7 +52,72 @@ static void render_cb(void *param)
 	if (!gate_run(g_gate, gl_tex, &lap_var, &diff, &hamming))
 		return;
 
-	blog(LOG_INFO, TAG "lap_var=%.6f diff=%.6f hamming=%u", lap_var, diff, (unsigned)hamming);
+	/* ── write frame to /dev/shm/i-cant-read.png ─────────────────────── */
+	blog(LOG_DEBUG, TAG "gates passed, dumping frame to /dev/shm/i-cant-read.png for python to pick up");
+	enum gs_color_format fmt = gs_texture_get_color_format(tex);
+	gs_stagesurf_t *surf = gs_stagesurface_create(width, height, fmt);
+	if (surf) {
+		gs_stage_texture(surf, tex);
+
+		uint8_t *data = NULL;
+		uint32_t linesize = 0;
+
+		if (gs_stagesurface_map(surf, &data, &linesize)) {
+			size_t row = (size_t)width * 4;
+			uint8_t *rgba = bmalloc((size_t)width * height * 4);
+			for (uint32_t y = 0; y < height; y++) {
+				const uint8_t *src = data + y * linesize;
+				uint8_t *dst = rgba + y * row;
+
+				if (fmt == GS_BGRA) {
+					for (uint32_t x = 0; x < width; x++) {
+						dst[x * 4 + 0] = src[x * 4 + 2]; /* R ← B */
+						dst[x * 4 + 1] = src[x * 4 + 1]; /* G */
+						dst[x * 4 + 2] = src[x * 4 + 0]; /* B ← R */
+						// dst[x * 4 + 3] = src[x * 4 + 3]; /* A */
+						dst[x * 4 + 3] = 255; // force opaque alpha
+					}
+				} else {
+					memcpy(dst, src, row); /* already RGBA */
+					for (uint32_t x = 0; x < width; x++)
+						dst[x * 4 + 3] = 255; /* ignore texture alpha */
+				}
+			}
+
+			uint8_t *packed = NULL;
+			int need_pack = ((uint32_t)linesize != width * 4u);
+
+			if (need_pack) {
+				packed = bmalloc((size_t)width * height * 4);
+				for (uint32_t y = 0; y < height; y++)
+					memcpy(packed + y * width * 4, rgba + y * linesize, width * 4);
+			}
+
+			if (!stbi_write_png("/dev/shm/i-cant-read.png", (int)width, (int)height, 4,
+					    need_pack ? packed : rgba, need_pack ? (int)(width * 4) : (int)linesize))
+				blog(LOG_WARNING, TAG "stbi_write_png failed");
+
+			if (packed)
+				bfree(packed);
+			bfree(rgba);
+
+			gs_stagesurface_unmap(surf);
+		} else {
+			blog(LOG_WARNING, TAG "gs_stagesurface_map failed");
+		}
+
+		gs_stagesurface_destroy(surf);
+	} else {
+		blog(LOG_WARNING, TAG "gs_stagesurface_create failed");
+	}
+
+	/* Frame passed all gates: notify Python with a single byte */
+	blog(LOG_DEBUG, TAG "frame passed gates (lap_var=%.6f diff=%.6f hamming=%u), sending signal to Python", lap_var,
+	     diff, (unsigned)hamming);
+	if (g_sock >= 0) {
+		uint8_t sig = 1;
+		send(g_sock, &sig, 1, MSG_DONTWAIT);
+	}
 }
 
 GateConfig generate_config(void)
@@ -105,18 +172,18 @@ bool cant_read_gate_init(void)
 	}
 
 	/* Datagram socket → Python listener */
-	// g_sock = socket(AF_UNIX, SOCK_DGRAM, 0);
-	// if (g_sock >= 0) {
-	// 	struct sockaddr_un addr;
-	// 	memset(&addr, 0, sizeof addr);
-	// 	addr.sun_family = AF_UNIX;
-	// 	strncpy(addr.sun_path, GATE_SOCK, sizeof addr.sun_path - 1);
-	// 	if (connect(g_sock, (struct sockaddr *)&addr, sizeof addr) < 0) {
-	// 		blog(LOG_WARNING, TAG "socket connect: %s", strerror(errno));
-	// 		close(g_sock);
-	// 		g_sock = -1;
-	// 	}
-	// }
+	g_sock = socket(AF_UNIX, SOCK_DGRAM, 0);
+	if (g_sock >= 0) {
+		struct sockaddr_un addr;
+		memset(&addr, 0, sizeof addr);
+		addr.sun_family = AF_UNIX;
+		strncpy(addr.sun_path, GATE_SOCK, sizeof addr.sun_path - 1);
+		if (connect(g_sock, (struct sockaddr *)&addr, sizeof addr) < 0) {
+			blog(LOG_WARNING, TAG "socket connect: %s", strerror(errno));
+			close(g_sock);
+			g_sock = -1;
+		}
+	}
 
 	obs_add_main_rendered_callback(render_cb, NULL);
 

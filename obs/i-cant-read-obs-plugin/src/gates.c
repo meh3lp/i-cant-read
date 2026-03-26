@@ -41,11 +41,11 @@ struct GatePipeline {
 	GLuint ubo_reduce;
 	GLuint fbo_src;
 	GLuint fbo_small;
-	uint64_t prev_hash;  // Updated on successful ocr
-	bool has_prev;  // Updated every frame
+	uint64_t prev_hash; // Updated on successful ocr
+	bool has_prev;      // Updated every frame
 	float norm_lap_var_thr;
 	float norm_diff_thr;
-	uint8_t stability_frames;  // Updated every frame, reset to 0 on diff > norm_diff_thr
+	uint8_t stability_frames; // Updated every frame, reset to 0 on diff > norm_diff_thr
 	float norm_black_thr;
 	float norm_lap_edge;
 	float norm_noise_floor;
@@ -286,14 +286,13 @@ bool gate_run(GatePipeline *p, unsigned int gl_tex_id, float *out_lap_var, float
 	glBindTexture(GL_TEXTURE_2D, (GLuint)gl_tex_id);
 	glUniform1i(0, 0); /* sampler location still works */
 	/* bind image outputs (binding= matches layout in gray_lap.comp) */
-	glBindImageTexture(
-		0,  // binding = 0 in gray_lap.comp
-		p->tex_gray_cur,  // output texture id
-		0,  // mipmap level
-		GL_FALSE,  // layered=false, single texture
-		0,  // layer=0 since not layered
-		GL_WRITE_ONLY,  // Allow shader to write to p->tex_gray_cur
-		GL_R32F  // 32-bit single-channel floats (red channel only)
+	glBindImageTexture(0,               // binding = 0 in gray_lap.comp
+			   p->tex_gray_cur, // output texture id
+			   0,               // mipmap level
+			   GL_FALSE,        // layered=false, single texture
+			   0,               // layer=0 since not layered
+			   GL_WRITE_ONLY,   // Allow shader to write to p->tex_gray_cur
+			   GL_R32F          // 32-bit single-channel floats (red channel only)
 	);
 	glBindImageTexture(1, p->tex_lap, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
 	glBindImageTexture(2, p->tex_mask_cur, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R8);
@@ -363,8 +362,8 @@ bool gate_run(GatePipeline *p, unsigned int gl_tex_id, float *out_lap_var, float
 			*out_lap_var = lap_var;
 		if (lap_var <= p->norm_lap_var_thr) {
 			swap_prev(p);
-			blog(LOG_DEBUG, TAG "laplacian variance %.6f below threshold %.6f, skipping further gates", lap_var,
-			     p->norm_lap_var_thr);
+			blog(LOG_DEBUG, TAG "laplacian variance %.6f below threshold %.6f, skipping further gates",
+			     lap_var, p->norm_lap_var_thr);
 			goto done; /* result stays false */
 		}
 	}
@@ -407,23 +406,23 @@ bool gate_run(GatePipeline *p, unsigned int gl_tex_id, float *out_lap_var, float
 		if (out_diff)
 			*out_diff = mean_diff;
 		// fail if frame became unstable or if not enough stable frames yet
-		if (p->cfg.diff_threshold > 0.0f)
-		{
-			if (mean_diff >= p->norm_diff_thr)
-			{
+		if (p->cfg.diff_threshold > 0.0f) {
+			if (mean_diff >= p->norm_diff_thr) {
 				p->stability_frames = 0;
-				blog(LOG_DEBUG, TAG "frame unstable (diff %.6f above threshold %.6f), resetting stability_frames to 0", mean_diff, p->norm_diff_thr);
+				blog(LOG_DEBUG,
+				     TAG
+				     "frame unstable (diff %.6f above threshold %.6f), resetting stability_frames to 0",
+				     mean_diff, p->norm_diff_thr);
 			}
-			if (p->stability_frames < p->cfg.stability_frames)
-			{
+			if (p->stability_frames < p->cfg.stability_frames) {
 				p->stability_frames++;
-				blog(LOG_DEBUG, TAG "stability_frames %u/%u", p->stability_frames, p->cfg.stability_frames);
+				blog(LOG_DEBUG, TAG "stability_frames %u/%u", p->stability_frames,
+				     p->cfg.stability_frames);
 				swap_prev(p);
 				goto done; /* result stays false */
-			}		
+			}
 		}
-	}
-	else {
+	} else {
 		blog(LOG_DEBUG, TAG "No previous frame, skipping diff");
 	}
 	/* ── Gate 3: dHash ───────────────────────────────────────────────── */
@@ -457,13 +456,14 @@ bool gate_run(GatePipeline *p, unsigned int gl_tex_id, float *out_lap_var, float
 			*out_hamming = (float)hamming;
 		if (p->prev_hash != 0 && hamming <= p->cfg.phash_hamming_threshold) {
 			swap_prev(p);
-			blog(LOG_DEBUG, TAG "dHash Hamming distance %d below threshold %d, failing gate", hamming, p->cfg.phash_hamming_threshold);
+			blog(LOG_DEBUG, TAG "dHash Hamming distance %d below threshold %d, failing gate", hamming,
+			     p->cfg.phash_hamming_threshold);
 			goto done;
 		}
-		blog(LOG_DEBUG, TAG "Updating dHash (hamming %d above threshold %d)", hamming, p->cfg.phash_hamming_threshold);
+		blog(LOG_DEBUG, TAG "Updating dHash (hamming %d above threshold %d)", hamming,
+		     p->cfg.phash_hamming_threshold);
 		p->prev_hash = cur_hash;
-	}
-	else {
+	} else {
 		blog(LOG_DEBUG, TAG "dHash disabled, skipping");
 	}
 	swap_prev(p);

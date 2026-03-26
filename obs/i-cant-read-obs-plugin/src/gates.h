@@ -15,7 +15,7 @@
 typedef struct {
 	float text_lap_threshold;    /* lap.var() threshold                  */
 	float diff_threshold;        /* mean abs-diff threshold; 0 = disabled */
-	int stability_frames;    /* frames below diff_threshold to pass   */
+	int stability_frames;        /* frames below diff_threshold to pass   */
 	int phash_hamming_threshold; /* max Hamming distance;   0 = disabled */
 	float black_threshold;       /* luma cutoff for GATE_MODE_BLACK      */
 	float luma_noise_floor;      /* per-pixel diff noise floor           */
