@@ -1,0 +1,127 @@
+import config
+import logging
+import redis as _redis
+import typing
+
+from celery import chain
+
+import config
+
+from tasks import (
+    clean_text,
+    enqueue_playback,
+    filter_text,
+    run_kokoro_gradio,
+    initialize_chain,
+    initialize_frame_chain,
+    run_ollama_ocr_frame,
+    run_owocr_ocr_frame,
+    dedup_ocr,
+)
+if typing.TYPE_CHECKING:
+    from management.i_cant_read import ICantRead
+
+log = logging.getLogger(__name__)
+
+class Dispatcher:
+    '''
+    Takes whatever listener got (could be text or image)
+    and decide where it goes next
+    '''
+    app: "ICantRead"
+
+    def __init__(
+        self,
+        app: "ICantRead",
+        redis: "_redis.Redis",
+    ):
+        self.app = app
+        self._seq_num: int = 0
+        self.redis = redis
+        stored = self.redis.get(config.SEQ_COUNTER_KEY)
+        if stored is not None:
+            self._seq_num = int(stored)
+
+        tts_task_options = {
+            "kokoro_gradio": run_kokoro_gradio,
+        }
+        tts_task_module = tts_task_options.get(config.TTS_PROVIDER)
+        if tts_task_module is None:
+            log.error("unsupported TTS provider: %s", config.TTS_PROVIDER)
+            raise ValueError(f"unsupported TTS provider: {config.TTS_PROVIDER}")
+        self._generate_tts = tts_task_module
+
+        if app.ocr_provider_requires_frame_capture:
+            ocr_task_options = {
+                "ollama": run_ollama_ocr_frame,
+                "owocr_send_frames": run_owocr_ocr_frame,
+            }
+            self.ocr_task = ocr_task_options.get(config.OCR_PROVIDER)
+            if self.ocr_task is None:
+                log.error("unsupported OCR provider: %s", config.OCR_PROVIDER)
+                raise ValueError(f"unsupported OCR provider: {config.OCR_PROVIDER}")
+
+
+    def _next_seq(self) -> int:
+        """Atomically claim the next sequence number."""
+        seq = self._seq_num
+        self._seq_num += 1
+        self.redis.set(config.SEQ_COUNTER_KEY, str(self._seq_num))
+        return seq
+
+
+    def _build_text_pipeline(self) -> list:
+        """Return the shared tail of the chain: filter → cleanup → tts → rvc → playback."""
+        tasks = []
+
+        # ─── Optional TTS pre-processing ─────────────────────────────────
+        if config.TEXT_FILTER_ENABLED:
+            tasks.append(filter_text.s())
+        if config.OLLAMA_TEXT_CLEANUP_ENABLED:
+            tasks.append(clean_text.s())
+
+        # ─── Required TTS step ───────────────────────────────────────────
+        tasks.append(self._generate_tts.s())
+
+        # ─── Optional RVC step ───────────────────────────────────────────
+        if self.app.rvc is not None:
+            tasks.append(self.app.rvc.task.s())
+
+        # ─── Required playback step ──────────────────────────────────────
+        tasks.append(enqueue_playback.s())
+        return tasks
+
+
+    def dispatch_recognized_text(self, text: str) -> None:
+        """Dispatch already-recognized text (owocr / vision-listener dedup)."""
+        seq = self._next_seq()
+
+        tasks = [initialize_chain.si((text, seq))]
+        tasks.extend(self._build_text_pipeline())
+
+        pipeline = chain(*tasks)
+        pipeline.delay()
+        log.info("dispatched seq=%d: %s", seq, text[:80])
+
+
+    def dispatch_captured_frame(self, b64_image: str) -> None:
+        """Dispatch a base64-encoded screenshot for OCR → TTS pipeline."""
+        if self.app.ocr_provider_returns_text_immediately:
+            seq = self._next_seq()
+        else:
+            seq = 0  # placeholder seq, real seq will be assigned after OCR step
+
+        tasks = [
+            initialize_frame_chain.si((b64_image, seq)),
+            self.ocr_task.s(),
+        ]
+        if self.app.ocr_provider_requires_frame_capture:
+            if config.OCR_DEDUP_ENABLED:
+                tasks.append(dedup_ocr.s())
+            tasks.extend(self._build_text_pipeline())
+
+            pipeline = chain(*tasks)
+            pipeline.delay()
+        else:
+            log.debug("OCR Result will be received by another listener, skipping text part of pipeline")
+        log.info("dispatched frame seq=%d", seq)

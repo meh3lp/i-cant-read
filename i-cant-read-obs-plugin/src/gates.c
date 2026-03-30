@@ -217,7 +217,7 @@ GatePipeline *gate_create(uint32_t w, uint32_t h, const GateConfig *cfg)
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, p->tex_small, 0);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	p->has_prev = false;
-	p->prev_hash = 0;
+	p->prev_hash = 65535; /* invalid dHash, all bits set (max Hamming distance) */
 	blog(LOG_INFO, TAG "pipeline created %ux%u mode=%d num_wg=%u", w, h, cfg->mode, p->num_wg);
 	return p;
 }
@@ -451,7 +451,7 @@ bool gate_run(GatePipeline *p, unsigned int gl_tex_id, float *out_lap_var, float
 			gray72[i] = (uint8_t)((299 * r + 587 * g + 114 * b) / 1000);
 		}
 		cur_hash = dhash_compute_9x8(gray72);
-		hamming = p->prev_hash != 0 ? dhash_hamming64(cur_hash, p->prev_hash) : 64;
+		hamming = p->prev_hash != 65535 ? dhash_hamming64(cur_hash, p->prev_hash) : 64;
 		if (out_hamming)
 			*out_hamming = (float)hamming;
 		if (p->prev_hash != 0 && hamming <= p->cfg.phash_hamming_threshold) {
