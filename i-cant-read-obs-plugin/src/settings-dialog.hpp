@@ -17,8 +17,8 @@ private:
 	obs_data_t *settings;
 	QSpinBox *stability_frames;
 	QDoubleSpinBox *stability_threshold;
-	QSpinBox *hash_threshold;
 	QDoubleSpinBox *text_lap_threshold;
+	QDoubleSpinBox *change_threshold;
 	QSpinBox *black_threshold;
 	QDoubleSpinBox *luma_noise_floor;
 	QCheckBox *use_lap_carve;

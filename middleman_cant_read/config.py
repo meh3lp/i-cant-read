@@ -136,8 +136,8 @@ OLLAMA_CLEANUP_HISTORY_SIZE = 5  # recent user/assistant exchanges to include
 
 # ── OCR deduplication (OCR_DEDUP_ENABLED is True) ──────────────────────────
 OCR_DEDUP_WINDOW_SIZE = 5              # number of recent OCR texts to keep
-OCR_DEDUP_SIMILARITY_THRESHOLD = 0.85  # whole-text ratio above this → near-dup skip
-OCR_DEDUP_SEGMENT_THRESHOLD = 0.70     # per-segment similarity (ratio or containment)
+OCR_DEDUP_SIMILARITY_THRESHOLD = 0.95  # whole-text ratio above this → near-dup skip
+OCR_DEDUP_SEGMENT_THRESHOLD = 0.85     # per-segment similarity (ratio or containment)
 OCR_DEDUP_MIN_SEGMENT_LENGTH = 10      # ignore segments shorter than this (garbled / UI noise)
 
 

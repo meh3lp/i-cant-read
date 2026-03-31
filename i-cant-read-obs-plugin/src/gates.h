@@ -2,9 +2,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define GATE_MODE_PLAIN    0
-#define GATE_MODE_BLACK    1
-#define GATE_MODE_LAPCARVE 2
+#define BLACK_MASK_BIT (1 << 0)
+#define LAP_MASK_BIT   (1 << 1)
+#define SWAP_RB_BIT    (1 << 2)
 
 /*
  * Thresholds use Python-side units:
@@ -15,14 +15,13 @@
 typedef struct {
 	float text_lap_threshold;    /* lap.var() threshold                  */
 	float diff_threshold;        /* mean abs-diff threshold; 0 = disabled */
+	float change_diff_threshold; /* mean abs-diff threshold for text change gate; 0 = disabled */
 	int stability_frames;        /* frames below diff_threshold to pass   */
-	int phash_hamming_threshold; /* max Hamming distance;   0 = disabled */
-	float black_threshold;       /* luma cutoff for GATE_MODE_BLACK      */
+	float black_threshold;       /* luma cutoff for black mask  */
 	float luma_noise_floor;      /* per-pixel diff noise floor           */
 	float lap_edge_threshold;    /* |lap| edge binarisation threshold    */
 	int lap_dilate_kernel;       /* dilation kernel size (odd int ≥ 1)   */
-	int mode;                    /* GATE_MODE_*                          */
-	int swap_rb;                 /* 1 when OBS stores BGRA in RGBA tex   */
+	int modes;                   /* bitfield: which gates to apply (BLACK_MASK_BIT, LAP_MASK_BIT, SWAP_RB_BIT) */
 } GateConfig;
 
 typedef struct GatePipeline GatePipeline; /* opaque */
@@ -37,6 +36,7 @@ void gate_destroy(GatePipeline *gp);
  * Returns true only when every enabled gate passes.
  * out_* pointers may be NULL.
  */
-bool gate_run(GatePipeline *gp, unsigned int gl_tex_id, float *out_lap_var, float *out_diff, float *out_hamming);
+bool gate_run(GatePipeline *p, unsigned int gl_tex_id, float *out_lap_var, float *out_stability_diff,
+	      float *out_change_diff);
 
 void gate_update_config(GatePipeline *p, const GateConfig *cfg);

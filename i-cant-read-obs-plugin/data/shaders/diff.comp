@@ -7,7 +7,7 @@ layout(location = 2) uniform sampler2D u_mask_cur;
 layout(location = 3) uniform sampler2D u_mask_prev;
 layout(location = 4) uniform int       u_width;
 layout(location = 5) uniform int       u_height;
-layout(location = 6) uniform int       u_mode;
+layout(location = 6) uniform int       u_modes;
 layout(location = 7) uniform float     u_noise_floor;
 
 struct Pair { float a; float b; };
@@ -29,10 +29,10 @@ void main() {
         float gp = texelFetch(u_gray_prev, gid, 0).r;
         float ad = abs(gc - gp);
 
-        if (u_mode == 0) {
+        if ((u_modes & ((1 << 0) | (1 << 1))) == 0) {
             /* plain: full frame, no noise floor (matches Python else branch) */
-            contrib = ad;
-            cnt     = 1.0;
+             contrib = ad;
+             cnt     = 1.0;
         } else {
             /* black / lapcarve: noise floor + union mask */
             if (ad < u_noise_floor) ad = 0.0;

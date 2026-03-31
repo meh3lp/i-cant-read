@@ -61,14 +61,14 @@ SettingsDialog::SettingsDialog(obs_data_t *s, QWidget *parent) : QDialog(parent)
 	auto *chng_group = new QGroupBox("Change Detection");
 	auto *chng_form = new QFormLayout(chng_group);
 
-	hash_threshold = make_int(0, 64, 1, obs_data_get_int(s, "hash_threshold"));
-	chng_form->addRow("Hash Threshold", hash_threshold);
-	chng_form->addRow("", hint("Min dHash Hamming distance to count as changed.\n"
-				   "Dialogue missed → decrease  |  Same text repeated → increase"));
-
 	text_lap_threshold = make_double(0.0, 200.0, 0.5, obs_data_get_double(s, "text_lap_threshold"));
 	chng_form->addRow("Text Lap Threshold", text_lap_threshold);
 	chng_form->addRow("", hint("Laplacian variance below this = no text present."));
+
+	change_threshold = make_double(0.0, 255.0, 0.1, obs_data_get_double(s, "change_threshold"));
+	chng_form->addRow("Change diff Threshold", change_threshold);
+	chng_form->addRow("", hint("Min mean absolute diff (0-255) from previous OCR frame to count as changed.\n"
+				   "Missed dialogue change → decrease  |  False change trigger → increase"));
 
 	root->addWidget(chng_group);
 
@@ -122,8 +122,8 @@ void SettingsDialog::save()
 {
 	obs_data_set_int(settings, "stability_frames", stability_frames->value());
 	obs_data_set_double(settings, "stability_threshold", stability_threshold->value());
-	obs_data_set_int(settings, "hash_threshold", hash_threshold->value());
 	obs_data_set_double(settings, "text_lap_threshold", text_lap_threshold->value());
+	obs_data_set_double(settings, "change_threshold", change_threshold->value());
 	obs_data_set_int(settings, "black_threshold", black_threshold->value());
 	obs_data_set_double(settings, "luma_noise_floor", luma_noise_floor->value());
 	obs_data_set_bool(settings, "use_lap_carve", use_lap_carve->isChecked());

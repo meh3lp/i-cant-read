@@ -8,8 +8,7 @@ layout(std140, binding = 1) uniform Params {
     int   u_height;
     float u_lap_edge_thr;
     float u_black_thr;
-    int   u_mode;
-    int   u_swap_rb;
+    int   u_modes;  // bitmask: 0=black, 1=lap 2=swap_rb
 };
 
 layout(r32f, binding = 0) writeonly uniform image2D u_gray;
@@ -25,7 +24,7 @@ shared float sh_b[256];
 float luma(ivec2 p) {
     p = clamp(p, ivec2(0), ivec2(u_width - 1, u_height - 1));
     vec4 c = texelFetch(u_src, p, 0);
-    vec3 rgb = (u_swap_rb != 0) ? c.bgr : c.rgb;
+    vec3 rgb = ((u_modes & (1 << 2)) != 0) ? c.bgr : c.rgb;
     return dot(rgb, vec3(0.299, 0.587, 0.114));
 }
 
@@ -44,8 +43,8 @@ void main() {
                   + luma(gid + ivec2( 1,  0))
                   + luma(gid + ivec2(-1,  0));
         float mask = 1.0;
-        if      (u_mode == 1) mask = step(u_black_thr,    gc);
-        else if (u_mode == 2) mask = step(u_lap_edge_thr, abs(lap_val));
+        if ((u_modes & (1 << 0)) != 0) mask = step(u_black_thr,    gc);
+        if ((u_modes & (1 << 1)) != 0) mask = step(u_lap_edge_thr, abs(lap_val));
         imageStore(u_gray, gid, vec4(gc));
         imageStore(u_lap,  gid, vec4(lap_val));
         imageStore(u_mask, gid, vec4(mask));

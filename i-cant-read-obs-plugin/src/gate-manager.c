@@ -48,8 +48,8 @@ static void render_cb(void *param)
 	}
 	blog(LOG_DEBUG, TAG "got GL texture ID %u", gl_tex);
 
-	float lap_var, diff, hamming;
-	if (!gate_run(g_gate, gl_tex, &lap_var, &diff, &hamming))
+	float lap_var, stability_diff, change_diff;
+	if (!gate_run(g_gate, gl_tex, &lap_var, &stability_diff, &change_diff))
 		return;
 
 	/* ── write frame to /dev/shm/i-cant-read.png ─────────────────────── */
@@ -112,8 +112,9 @@ static void render_cb(void *param)
 	}
 
 	/* Frame passed all gates: notify Python with a single byte */
-	blog(LOG_DEBUG, TAG "frame passed gates (lap_var=%.6f diff=%.6f hamming=%u), sending signal to Python", lap_var,
-	     diff, (unsigned)hamming);
+	blog(LOG_DEBUG,
+	     TAG "frame passed gates (lap_var=%.6f stability diff=%.6f change_diff=%.6f), sending signal to Python",
+	     lap_var, stability_diff, change_diff);
 	if (g_sock >= 0) {
 		uint8_t sig = 1;
 		send(g_sock, &sig, 1, MSG_DONTWAIT);
@@ -130,8 +131,7 @@ GateConfig generate_config(void)
 		// .diff_threshold = 5.0f,
 		.diff_threshold = obs_data_get_double(cant_read_settings, "stability_threshold"),
 		.stability_frames = (uint8_t)obs_data_get_int(cant_read_settings, "stability_frames"),
-		// .phash_hamming_threshold = 4,
-		.phash_hamming_threshold = (uint8_t)obs_data_get_int(cant_read_settings, "hash_threshold"),
+		.change_diff_threshold = obs_data_get_double(cant_read_settings, "change_threshold"),
 		// .black_threshold = 10.0f,
 		.black_threshold = (double)obs_data_get_int(cant_read_settings, "black_threshold"),
 		// .luma_noise_floor = 3.0f,
@@ -140,13 +140,7 @@ GateConfig generate_config(void)
 		.lap_edge_threshold = obs_data_get_double(cant_read_settings, "lap_carve_edge_threshold"),
 		// .lap_dilate_kernel = 5,
 		.lap_dilate_kernel = obs_data_get_int(cant_read_settings, "lap_dilate_kernel"),
-		.mode = GATE_MODE_BLACK,
-		/*
-         * swap_rb: set to 1 if colors look wrong.
-         * OBS on Linux usually stores RGBA, so OpenCV-style BGR
-         * conversions need swap_rb=1.  Verify with a test frame.
-         */
-		.swap_rb = 1,
+		.modes = BLACK_MASK_BIT | SWAP_RB_BIT,
 	};
 	return cfg;
 }

@@ -177,6 +177,14 @@ def _check_segment(
 
             # Reverse: most of old is embedded in new → new tail.
             if len(old) >= 15 and match.size / len(old) >= 0.80:
+                # Guard: if the match starts ≥ 15 chars into new, the
+                # two strings merely share a phrase (coincidental lexical
+                # overlap like "understand the situation") rather than
+                # exhibiting the VN scrolling-accumulation pattern where
+                # old text anchors the beginning of new.  In that case
+                # the new segment is genuinely new — skip this old entry.
+                if match.b >= 15:
+                    continue
                 suffix = _extract_new_suffix(old, new_norm)
                 if suffix is not None:
                     return _check_segment(suffix, old_norms, threshold)

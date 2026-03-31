@@ -3,7 +3,7 @@
 #include <obs-frontend-api.h>
 #include <util/platform.h>
 #include "settings-dialog.hpp"
-#include <gate-manager.h>
+#include "gate-manager.h"
 
 static obs_data_t *cant_read_settings = NULL;
 
@@ -11,7 +11,7 @@ static void cant_read_set_defaults(obs_data_t *settings_data)
 {
 	obs_data_set_default_int(settings_data, "stability_frames", 7);
 	obs_data_set_default_double(settings_data, "stability_threshold", 0.2);
-	obs_data_set_default_int(settings_data, "hash_threshold", 15);
+	obs_data_set_default_double(settings_data, "change_threshold", 0.4);
 	obs_data_set_default_double(settings_data, "text_lap_threshold", 30.0);
 	obs_data_set_default_int(settings_data, "black_threshold", 0);
 	obs_data_set_default_double(settings_data, "luma_noise_floor", 30.0);

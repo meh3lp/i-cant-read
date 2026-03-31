@@ -78,8 +78,6 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     src/settings.h
     src/settings-dialog.cpp
     src/settings-dialog.hpp
-    src/dhash.c
-    src/dhash.h
     src/gate-manager.c
     src/gate-manager.h
     src/stb_image_write.h
