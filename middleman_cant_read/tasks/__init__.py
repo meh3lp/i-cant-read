@@ -9,7 +9,7 @@ from .rvc_tasks import (
 )
 from .textfilter_task import filter_text
 from .tts_tasks import (
-    run_kokoro_gradio,
+    run_kokoro_fastapi,
 )
 from .initial_task import initialize_chain, initialize_frame_chain
 from .ocr_tasks import (
@@ -24,7 +24,7 @@ __all__ = (
     "enqueue_playback",
     "run_rvc_gradio",
     "filter_text",
-    "run_kokoro_gradio",
+    "run_kokoro_fastapi",
     "initialize_chain",
     "initialize_frame_chain",
     "run_ollama_ocr_frame",

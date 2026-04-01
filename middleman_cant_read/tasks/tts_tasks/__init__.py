@@ -1,5 +1,5 @@
-from .kokoro_gradio_task import run_kokoro_gradio
+from .kokoro_fastapi_task import run_kokoro_fastapi
 
 __all__ = (
-    "run_kokoro_gradio",
+    "run_kokoro_fastapi",
 )

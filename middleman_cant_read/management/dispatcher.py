@@ -11,7 +11,7 @@ from tasks import (
     clean_text,
     enqueue_playback,
     filter_text,
-    run_kokoro_gradio,
+    run_kokoro_fastapi,
     initialize_chain,
     initialize_frame_chain,
     run_ollama_ocr_frame,
@@ -43,7 +43,7 @@ class Dispatcher:
             self._seq_num = int(stored)
 
         tts_task_options = {
-            "kokoro_gradio": run_kokoro_gradio,
+            "kokoro_fastapi": run_kokoro_fastapi,
         }
         tts_task_module = tts_task_options.get(config.TTS_PROVIDER)
         if tts_task_module is None:

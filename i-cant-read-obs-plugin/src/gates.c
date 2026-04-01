@@ -479,6 +479,13 @@ void gate_destroy(GatePipeline *p)
 bool gate_run(GatePipeline *p, unsigned int gl_tex_id, float *out_lap_var, float *out_stability_diff,
 	      float *out_change_diff)
 {
+	if (out_lap_var)
+		*out_lap_var = 0.0f;
+	if (out_stability_diff)
+		*out_stability_diff = 0.0f;
+	if (out_change_diff)
+		*out_change_diff = 0.0f;
+
 	bool result = true;
 	/* ── Save GL state ───────────────────────────────────────────────── */
 	blog(LOG_DEBUG, TAG "Saving obs GL state");

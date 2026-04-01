@@ -157,16 +157,15 @@ TEXT_FILTER_UI_BLOCKLIST: list[str] = [
 # ──────────────────────────────────────────────────────────
 # ─── TTS ──────────────────────────────────────────────────
 # ──────────────────────────────────────────────────────────
-TTS_PROVIDER = "kokoro_gradio"
+TTS_PROVIDER = "kokoro_fastapi"
 RVC_PROVIDER = "rvc_gradio" # set to empty string to disable RVC
+TTS_FILES_DIR = "/dev/shm/cantread/tts"
 
 
-# ── Kokoro TTS (TTS_PROVIDER == "kokoro_gradio") ────────────────────────────────────────────
-KOKORO_URL = "http://127.0.0.1:7860"
-KOKORO_API_NAME = "/generate_tts_with_logs"
+# ── Kokoro TTS (TTS_PROVIDER == "kokoro_fastapi") ────────────────────────────────────────────
+KOKORO_URL = "http://127.0.0.1:8880"
 KOKORO_VOICE = "af_bella"
-KOKORO_FORMAT = "wav"
-SPEED = 0.9
+KOKORO_SPEED = 0.9
 
 
 # ── RVC (RVC_PROVIDER == 'rvc_gradio') ───────────────────────────────────────────────────

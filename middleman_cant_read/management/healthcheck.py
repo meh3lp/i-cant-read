@@ -26,7 +26,7 @@ def check_owocr() -> None:
 
 def check_kokoro() -> None:
     """Verify Kokoro TTS Gradio server is responding."""
-    r = requests.get(config.KOKORO_URL, timeout=5)
+    r = requests.get(f"{config.KOKORO_URL}/v1/audio/voices", timeout=5)
     r.raise_for_status()
     log.info("Kokoro TTS OK  (%s)", config.KOKORO_URL)
 
@@ -98,7 +98,7 @@ def run_all_checks() -> None:
         },
         "Kokoro TTS": {
             "check": check_kokoro,
-            "condition": lambda cfg: cfg.TTS_PROVIDER == "kokoro_gradio",
+            "condition": lambda cfg: cfg.TTS_PROVIDER == "kokoro_fastapi",
         },
         "RVC": {
             "check": check_rvc,

@@ -1,6 +1,6 @@
 """Celery task: RVC voice conversion."""
-
 import logging
+import os
 import requests
 
 from tasks.celery_app import app
@@ -69,6 +69,13 @@ def run_rvc_gradio(self, prev_result: list) -> list:
             converted_path = converted_path.get("name") or converted_path.get("path", "")
     else:
         converted_path = str(audio_out)
+
+    # Cleanup: Remove source audio file
+    try:
+        os.remove(wav_path)
+        log.debug("Removed intermediate TTS file: %s", wav_path)
+    except Exception as e:
+        log.warning("Failed to remove intermediate TTS file %s: %s", wav_path, e)
 
     log.info("rvc: seq=%d → %s", seq_num, converted_path)
     return [converted_path, seq_num]
