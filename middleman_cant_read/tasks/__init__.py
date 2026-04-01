@@ -17,6 +17,7 @@ from .ocr_tasks import (
     run_owocr_ocr_frame
 )
 from .ocr_dedup_task import dedup_ocr
+from .dispatch_replicas_task import dispatch_replicas
 
 __all__ = (
     "celery_app",
@@ -30,4 +31,5 @@ __all__ = (
     "run_ollama_ocr_frame",
     "run_owocr_ocr_frame",
     "dedup_ocr",
+    "dispatch_replicas",
 )

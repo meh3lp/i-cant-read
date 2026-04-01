@@ -17,6 +17,7 @@ from tasks import (
     run_ollama_ocr_frame,
     run_owocr_ocr_frame,
     dedup_ocr,
+    dispatch_replicas,
 )
 if typing.TYPE_CHECKING:
     from management.i_cant_read import ICantRead
@@ -36,11 +37,7 @@ class Dispatcher:
         redis: "_redis.Redis",
     ):
         self.app = app
-        self._seq_num: int = 0
         self.redis = redis
-        stored = self.redis.get(config.SEQ_COUNTER_KEY)
-        if stored is not None:
-            self._seq_num = int(stored)
 
         tts_task_options = {
             "kokoro_fastapi": run_kokoro_fastapi,
@@ -63,16 +60,17 @@ class Dispatcher:
 
 
     def _next_seq(self) -> int:
-        """Atomically claim the next sequence number."""
-        seq = self._seq_num
-        self._seq_num += 1
-        self.redis.set(config.SEQ_COUNTER_KEY, str(self._seq_num))
-        return seq
+        """Atomically claim the next sequence number from Redis."""
+        return int(self.redis.incr(config.SEQ_COUNTER_KEY)) - 1
 
 
     def _build_text_pipeline(self) -> list:
-        """Return the shared tail of the chain: filter → cleanup → tts → rvc → playback."""
+        """Return the shared tail of the chain: dedup → filter → cleanup → tts → rvc → playback."""
         tasks = []
+
+        # ─── Optional OCR dedup ──────────────────────────────────────────
+        if config.OCR_DEDUP_ENABLED:
+            tasks.append(dedup_ocr.s())
 
         # ─── Optional TTS pre-processing ─────────────────────────────────
         if config.TEXT_FILTER_ENABLED:
@@ -93,10 +91,15 @@ class Dispatcher:
 
 
     def dispatch_recognized_text(self, text: str) -> None:
-        """Dispatch already-recognized text (owocr / vision-listener dedup)."""
-        seq = self._next_seq()
+        """Dispatch already-recognized text (owocr / vision-listener dedup).
 
-        tasks = [initialize_chain.si((text, seq))]
+        Wraps plain text as a Narrator replica for consistency with the
+        characters-mode pipeline.
+        """
+        seq = self._next_seq()
+        replica = {"speaker": "Narrator", "text": text}
+
+        tasks = [initialize_chain.si((replica, seq))]
         tasks.extend(self._build_text_pipeline())
 
         pipeline = chain(*tasks)
@@ -105,23 +108,17 @@ class Dispatcher:
 
 
     def dispatch_captured_frame(self, b64_image: str) -> None:
-        """Dispatch a base64-encoded screenshot for OCR → TTS pipeline."""
-        if self.app.ocr_provider_returns_text_immediately:
-            seq = self._next_seq()
-        else:
-            seq = 0  # placeholder seq, real seq will be assigned after OCR step
+        """Dispatch a base64-encoded screenshot for OCR → fan-out pipeline.
 
+        The OCR task returns replicas; dispatch_replicas fans out a
+        separate text→TTS chain for each replica.
+        """
         tasks = [
-            initialize_frame_chain.si((b64_image, seq)),
+            initialize_frame_chain.si((b64_image, 0)),
             self.ocr_task.s(),
+            dispatch_replicas.s(),
         ]
-        if self.app.ocr_provider_requires_frame_capture:
-            if config.OCR_DEDUP_ENABLED:
-                tasks.append(dedup_ocr.s())
-            tasks.extend(self._build_text_pipeline())
 
-            pipeline = chain(*tasks)
-            pipeline.delay()
-        else:
-            log.debug("OCR Result will be received by another listener, skipping text part of pipeline")
-        log.info("dispatched frame seq=%d", seq)
+        pipeline = chain(*tasks)
+        pipeline.delay()
+        log.info("dispatched frame for OCR → replica fan-out")

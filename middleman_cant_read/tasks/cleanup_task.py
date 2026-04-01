@@ -37,10 +37,13 @@ def _push_history(r: _redis.Redis, user_text: str, assistant_text: str, n: int) 
 def clean_text(prev_result: list) -> list:
     """Clean OCR text through Ollama.
 
-    *prev_result* is ``[text, seq_num]`` from the filter task.
-    Returns ``[cleaned_text, seq_num]`` or marks SKIP + raises Ignore.
+    *prev_result* is ``[replica_dict, seq_num]`` where replica_dict is
+    ``{"speaker": str, "text": str}``.
+    Returns ``[replica_dict, seq_num]`` or marks SKIP + raises Ignore.
     """
-    text, seq_num = prev_result
+    replica, seq_num = prev_result
+    text = replica["text"]
+    speaker = replica.get("speaker", "Narrator")
 
     log.info("cleaning: %s", text[:80])
 
@@ -81,4 +84,4 @@ def clean_text(prev_result: list) -> list:
         r.hset(config.PLAYBACK_HASH_KEY, str(seq_num), "SKIP")
         raise Ignore()
 
-    return [cleaned, seq_num]
+    return [{"speaker": speaker, "text": cleaned}, seq_num]

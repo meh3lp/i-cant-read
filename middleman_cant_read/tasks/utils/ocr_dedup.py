@@ -237,21 +237,27 @@ class OCRDedup:
     # ── storage helpers ──────────────────────────────────────────────────
 
     @staticmethod
-    def _list_key() -> str:
-        return getattr(config, "OCR_DEDUP_LIST_KEY", "cantread:ocr_dedup:window")
+    def _list_key(speaker: str = "") -> str:
+        prefix = getattr(config, "OCR_DEDUP_LIST_KEY_PREFIX", "cantread:ocr_dedup:window")
+        if speaker:
+            return f"{prefix}:{speaker}"
+        return prefix
 
     @staticmethod
-    def _lock_key() -> str:
-        return getattr(config, "OCR_DEDUP_LOCK_KEY", "cantread:ocr_dedup:lock")
+    def _lock_key(speaker: str = "") -> str:
+        prefix = getattr(config, "OCR_DEDUP_LOCK_KEY_PREFIX", "cantread:ocr_dedup:lock")
+        if speaker:
+            return f"{prefix}:{speaker}"
+        return prefix
 
-    def _get_window(self) -> list[str]:
+    def _get_window(self, speaker: str = "") -> list[str]:
         """Return the most recent OCR texts (oldest → newest)."""
         if self._redis is None:
             return list(self._mem_window)
-        raw = self._redis.lrange(self._list_key(), 0, -1)
+        raw = self._redis.lrange(self._list_key(speaker), 0, -1)
         return [json.loads(entry) for entry in raw]
 
-    def _push(self, text: str) -> None:
+    def _push(self, text: str, speaker: str = "") -> None:
         """Append *text* and trim the window to the configured size."""
         max_win = getattr(config, "OCR_DEDUP_WINDOW_SIZE", 5)
         if self._redis is None:
@@ -260,26 +266,30 @@ class OCRDedup:
                 self._mem_window = self._mem_window[-max_win:]
             return
         pipe = self._redis.pipeline()
-        pipe.rpush(self._list_key(), json.dumps(text))
-        pipe.ltrim(self._list_key(), -max_win, -1)
+        pipe.rpush(self._list_key(speaker), json.dumps(text))
+        pipe.ltrim(self._list_key(speaker), -max_win, -1)
         pipe.execute()
 
     # ── public API ───────────────────────────────────────────────────────
 
-    def dedup(self, text: str) -> str | None:
-        """Return deduplicated text, or *None* if fully duplicated."""
+    def dedup(self, text: str, speaker: str = "") -> str | None:
+        """Return deduplicated text, or *None* if fully duplicated.
+
+        When *speaker* is provided, deduplication is scoped to that
+        speaker's window only.
+        """
         if self._redis is not None:
             import redis as _redis_mod
 
-            lock = _redis_mod.lock.Lock(self._redis, self._lock_key(), timeout=5)
+            lock = _redis_mod.lock.Lock(self._redis, self._lock_key(speaker), timeout=5)
             with lock:
-                return self._do_dedup(text)
-        return self._do_dedup(text)
+                return self._do_dedup(text, speaker)
+        return self._do_dedup(text, speaker)
 
-    def _do_dedup(self, text: str) -> str | None:
-        window = self._get_window()
+    def _do_dedup(self, text: str, speaker: str = "") -> str | None:
+        window = self._get_window(speaker)
         # Always store the raw text so the window stays current.
-        self._push(text)
+        self._push(text, speaker)
 
         if not window:
             return text

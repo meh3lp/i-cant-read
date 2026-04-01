@@ -30,10 +30,14 @@ def _get_filter() -> TextFilter:
 def filter_text(prev_result: list) -> list:
     """Filter *text* through the noise / dedup / overlap pipeline.
 
-    Returns ``[filtered_text, seq_num]`` on success.
+    *prev_result* is ``[replica_dict, seq_num]`` where replica_dict is
+    ``{"speaker": str, "text": str}``.
+    Returns ``[replica_dict, seq_num]`` on success.
     Marks the playback hash as ``SKIP`` and raises :class:`Ignore` if rejected.
     """
-    text, seq_num = prev_result
+    replica, seq_num = prev_result
+    text = replica["text"]
+    speaker = replica.get("speaker", "Narrator")
 
     tf = _get_filter()
     filtered = tf.filter(text)
@@ -44,4 +48,4 @@ def filter_text(prev_result: list) -> list:
         r.hset(config.PLAYBACK_HASH_KEY, str(seq_num), "SKIP")
         raise Ignore()
 
-    return [filtered, seq_num]
+    return [{"speaker": speaker, "text": filtered}, seq_num]

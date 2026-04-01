@@ -75,21 +75,35 @@ OBS_PLUGIN_FRAME_PATH = '/dev/shm/i-cant-read.png'
 
 # ── Ollama (OCR_PROVIDER == "ollama" or OLLAMA_TEXT_CLEANUP_ENABLED is True) ───────────────────────────────────────────────────────────────────
 OLLAMA_URL = "http://localhost:11434"
-OLLAMA_KEEP_ALIVE = False
+OLLAMA_KEEP_ALIVE = "5m"
 
 
 # ── Ollama · vision OCR (OCR_PROVIDER == "ollama") ─────────────────────
 OLLAMA_OCR_MODEL = "qwen3.5:0.8b"
-OLLAMA_OCR_SYSTEM_PROMPT = (
-    "You are an OCR agent. Your only job is to transcribe text visible in the image. "
-    "Output plain text only — no markdown, no formatting, no explanations. "
-    "Preserve the original wording exactly; do not paraphrase or summarize. "
-    "If lines are wrapped due to layout constraints, join them into a single line. "
-    "For Japanese text, omit furigana and output only the base characters. "
-    "If text is partially cut off or obscured, transcribe only the clearly visible portion. "
-    "If there is no readable text in the image, respond with exactly: [EMPTY]"
-)
-OLLAMA_OCR_HISTORY_SIZE = 0  # recent user/assistant exchanges to include
+OLLAMA_OCR_SYSTEM_PROMPT = """
+You are an OCR agent. Extract all spoken text from the image and return it as JSON.
+
+OUTPUT FORMAT:
+{"replicas": [{"speaker": "<name>", "text": "<text>"}, ...]}
+
+SPEAKER IDENTIFICATION RULES:
+1. Look for name boxes, labels, or header text in the UI — these identify the speaker.
+2. In chat-style UIs: bubbles on the LEFT belong to the named contact (from the header/label).
+   Bubbles on the RIGHT belong to the player. To find the player's name, check if any LEFT-side bubble directly addresses them by name (e.g. "Endmin, you should...") — if so, use that name.
+   Consecutive bubbles from the same side belong to the same speaker until a bubble from the opposite side appears.
+   Only fall back to Unknown1 if no such address exists.
+3. If a speaker still cannot be identified, use Unknown1, Unknown2, etc. per unique speaker.
+4. Use "Narrator" ONLY for text physically visible in the image that is not inside a character speech bubble — e.g. floating captions or scene text. NEVER use it for background knowledge, game lore, or anything not literally readable in the image.
+
+TEXT RULES:
+5. Preserve original wording exactly. No paraphrasing, no markdown, no formatting.
+6. Join wrapped lines into a single line.
+7. Transcribe only clearly visible text. Skip obscured or unreadable portions.
+8. If no readable text exists, return: {"replicas": []}
+9. Transcribe ONLY text that is physically visible in the image. Do not add explanations, scene descriptions, game knowledge, or any content not present as readable text. Once all visible text is captured, stop immediately.
+
+Return only the JSON object. No explanation, no extra text.
+""".strip()
 
 
 # ── Ollama · (OLLAMA_TEXT_CLEANUP_ENABLED is True) ────────────────────────────────────────────────────
@@ -184,6 +198,39 @@ RVC_TRANSPOSE = 0
 RVC_F0_METHOD = "rmvpe"
 
 
+# ── Voice presets (maps speaker names to TTS/RVC settings) ────────────────
+# Each entry maps a speaker name to backend-specific TTS and RVC parameters.
+# The "default" key is the fallback when a speaker has no preset.
+# Structure: { "speaker_name": { "tts": { "backend_name": { ...params } }, "rvc": { "backend_name": { ...params } } } }
+# Tasks look up VOICE_PRESETS[speaker]["tts"][backend_name]; if missing,
+# they fall back to VOICE_PRESETS["default"], then to the global config values.
+VOICE_PRESETS: dict = {
+    "default": {
+        "tts": {
+            "kokoro_fastapi": {
+                "voice": KOKORO_VOICE,
+                "speed": KOKORO_SPEED,
+            },
+        },
+        # "rvc": {
+        #     "rvc_gradio": {
+        #         "model": RVC_MODEL,
+        #         "index": RVC_INDEX,
+        #     },
+        # },
+    },
+    # Example per-speaker preset:
+    # "Narrator": {
+    #     "tts": {
+    #         "kokoro_fastapi": {
+    #             "voice": "af_sarah",
+    #             "speed": 1.0,
+    #         },
+    #     },
+    # },
+}
+
+
 # ─── Player ─────────────────────────────────────────────────────────────────
 PLAYER_ENABLED = True
 PLAYER = 'mpv'
@@ -205,6 +252,6 @@ SEQ_COUNTER_KEY = "cantread:seq_counter"           # string: next sequence numbe
 TEXTFILTER_ZSET_KEY = "cantread:textfilter:window" # sorted set: text → timestamp
 TEXTFILTER_LOCK_KEY = "cantread:textfilter:lock"   # distributed lock for filter state
 OLLAMA_HISTORY_KEY = "cantread:ollama:history"      # list: recent cleanup exchanges (JSON)
-OLLAMA_OCR_HISTORY_KEY = "cantread:ollama:ocr_history" # list: recent OCR exchanges (JSON)
-OCR_DEDUP_LIST_KEY = "cantread:ocr_dedup:window"       # list: recent OCR texts for dedup
-OCR_DEDUP_LOCK_KEY = "cantread:ocr_dedup:lock"          # distributed lock for dedup
+
+OCR_DEDUP_LIST_KEY_PREFIX = "cantread:ocr_dedup:window"  # per-speaker list: recent OCR texts for dedup
+OCR_DEDUP_LOCK_KEY_PREFIX = "cantread:ocr_dedup:lock"    # per-speaker distributed lock for dedup

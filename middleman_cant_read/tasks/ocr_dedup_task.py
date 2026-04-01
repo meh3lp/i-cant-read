@@ -28,19 +28,23 @@ def _get_dedup() -> OCRDedup:
 def dedup_ocr(prev_result: list) -> list:
     """Remove old / repeated text from an OCR result.
 
-    *prev_result* is ``[text, seq_num]`` from :func:`ocr_frame`.
-    Returns ``[deduped_text, seq_num]`` or marks SKIP + raises Ignore.
+    *prev_result* is ``[replica_dict, seq_num]`` where replica_dict is
+    ``{"speaker": str, "text": str}``.
+    Returns ``[replica_dict, seq_num]`` or marks SKIP + raises Ignore.
+    Deduplication is per-speaker.
     """
-    text, seq_num = prev_result
+    replica, seq_num = prev_result
+    text = replica["text"]
+    speaker = replica.get("speaker", "Narrator")
 
     dd = _get_dedup()
-    result = dd.dedup(text)
+    result = dd.dedup(text, speaker)
 
     if result is None:
-        log.info("dedup_ocr: rejected seq=%d text=%s", seq_num, text[:60])
+        log.info("dedup_ocr: rejected seq=%d speaker=%s text=%s", seq_num, speaker, text[:60])
         r = _redis.Redis.from_url(config.REDIS_URL, decode_responses=True)
         r.hset(config.PLAYBACK_HASH_KEY, str(seq_num), "SKIP")
         raise Ignore()
 
     log.info("dedup_ocr seq=%d: %s", seq_num, result[:80])
-    return [result, seq_num]
+    return [{"speaker": speaker, "text": result}, seq_num]

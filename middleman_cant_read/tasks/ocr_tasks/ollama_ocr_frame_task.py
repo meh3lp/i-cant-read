@@ -1,4 +1,4 @@
-"""Celery task: OCR a screenshot via Ollama vision model."""
+"""Celery task: OCR a screenshot via Ollama vision model (characters mode)."""
 
 import json
 import logging
@@ -14,56 +14,45 @@ log = logging.getLogger(__name__)
 
 _client = Client(host=config.OLLAMA_URL, timeout=60)
 
-
-def _get_history(r: _redis.Redis, n: int) -> list[dict]:
-    """Return the last *n* user/assistant OCR exchanges from Redis."""
-    raw = r.lrange(config.OLLAMA_OCR_HISTORY_KEY, -n * 2, -1)
-    return [json.loads(entry) for entry in raw]
-
-
-def _push_history(r: _redis.Redis, assistant_text: str, n: int) -> None:
-    """Append an OCR exchange and trim to the last *n* exchanges.
-
-    User messages carry the image so we store a short placeholder instead;
-    only the assistant reply (recognized text) matters for context.
-    """
-    pipe = r.pipeline()
-    pipe.rpush(
-        config.OLLAMA_OCR_HISTORY_KEY,
-        json.dumps({"role": "user", "content": "OCR this image."}),
-        json.dumps({"role": "assistant", "content": assistant_text}),
-    )
-    pipe.ltrim(config.OLLAMA_OCR_HISTORY_KEY, -n * 2, -1)
-    pipe.execute()
+_REPLICAS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "replicas": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "speaker": {"type": "string"},
+                    "text": {"type": "string"},
+                },
+                "required": ["speaker", "text"],
+            },
+        },
+    },
+    "required": ["replicas"],
+}
 
 
-@app.task(name="tasks.run_ollama_ocr_frame")
-def run_ollama_ocr_frame(prev_result: list) -> list:
+@app.task(bind=True, name="tasks.run_ollama_ocr_frame", max_retries=3, default_retry_delay=5)
+def run_ollama_ocr_frame(self, prev_result: list) -> list:
     """OCR a base64-encoded PNG frame via Ollama vision.
 
     *prev_result* is ``[b64_image, seq_num]`` from initialize_frame_chain.
-    Returns ``[text, seq_num]`` or marks SKIP + raises Ignore.
+    Returns ``[replicas_list, seq_num]`` or marks SKIP + raises Ignore.
+    Each replica is ``{"speaker": str, "text": str}``.
     """
     b64_image, seq_num = prev_result
 
     log.info("ocr_frame: processing seq=%d", seq_num)
 
     r = _redis.Redis.from_url(config.REDIS_URL, decode_responses=True)
-    history_size = config.OLLAMA_OCR_HISTORY_SIZE
-    log.info("fetching last %d OCR history exchanges for context", history_size)
 
     try:
-        if history_size > 0:
-            history = _get_history(r, history_size)
-        else:
-            history = []
-        log.info("fetched %d history exchanges", len(history) // 2)
         messages = [
             {
                 "role": "system",
                 "content": config.OLLAMA_OCR_SYSTEM_PROMPT,
             },
-            *history,
             {
                 "role": "user",
                 "content": "OCR this image.",
@@ -75,18 +64,36 @@ def run_ollama_ocr_frame(prev_result: list) -> list:
             messages=messages,
             options={"num_predict": 4096},
             think=False,
-            keep_alive=config.OLLAMA_KEEP_ALIVE
+            format=_REPLICAS_SCHEMA,
+            keep_alive=config.OLLAMA_KEEP_ALIVE,
         )
-        text = resp.message.content.strip()
+        raw = resp.message.content.strip()
+        log.debug("Ollama raw response for seq=%d: %s", seq_num, raw)
+        if "''''" in raw:
+            # Strip '''json ... ''' if present
+            # raw = raw.split("'''", 1)[-1].rsplit("'''", 1)[0]
+            raw = raw.strip("'''").strip("json").strip()
+        if "```" in raw:
+            # Strip ```json ... ``` if present
+            raw = raw.strip("```").strip("json").strip()
+        data = json.loads(raw)
+        replicas = data.get("replicas", [])
+
     except Exception:
         log.exception("Ollama vision OCR failed for seq=%d", seq_num)
-        text = ""
+        try:
+            raise self.retry()  # retry with the same image, in case of transient Ollama issues
+        except self.MaxRetriesExceededError:
+            log.error("Ollama OCR max retries exceeded for seq=%d", seq_num)
+            replicas = []
 
-    if not text:
-        log.info("ocr_frame: empty result for seq=%d — SKIP", seq_num)
+    # Filter out replicas with empty text
+    replicas = [rep for rep in replicas if rep.get("text", "").strip()]
+
+    if not replicas:
+        log.info("ocr_frame: no replicas for seq=%d — SKIP", seq_num)
         r.hset(config.PLAYBACK_HASH_KEY, str(seq_num), "SKIP")
         raise Ignore()
 
-    _push_history(r, text, history_size)
-    log.info("ocr_frame seq=%d: %s", seq_num, text[:80])
-    return [text, seq_num]
+    log.info("ocr_frame seq=%d: %d replicas", seq_num, len(replicas))
+    return [replicas, seq_num]
