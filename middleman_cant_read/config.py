@@ -170,7 +170,7 @@ OLLAMA_CLEANUP_HISTORY_SIZE = 5  # recent user/assistant exchanges to include
 
 
 # ── OCR deduplication (OCR_DEDUP_ENABLED is True) ──────────────────────────
-OCR_DEDUP_WINDOW_SIZE = 20              # number of recent OCR texts to keep
+OCR_DEDUP_WINDOW_SIZE = 50              # number of recent OCR texts to keep
 OCR_DEDUP_SIMILARITY_THRESHOLD = 0.95  # whole-text ratio above this → near-dup skip
 OCR_DEDUP_SEGMENT_THRESHOLD = 0.85     # per-segment similarity (ratio or containment)
 OCR_DEDUP_MIN_SEGMENT_LENGTH = 10      # ignore segments shorter than this (garbled / UI noise)
@@ -193,7 +193,7 @@ TEXT_FILTER_UI_BLOCKLIST: list[str] = [
 # ─── TTS ──────────────────────────────────────────────────
 # ──────────────────────────────────────────────────────────
 TTS_PROVIDER = "kokoro_fastapi"
-RVC_PROVIDER = "rvc_gradio" # set to empty string to disable RVC
+RVC_PROVIDER = "applio" # set to empty string to disable RVC
 TTS_FILES_DIR = "/dev/shm/cantread/tts"
 
 
@@ -217,6 +217,27 @@ RVC_PROTECT_2 = 0
 # Inference parameters
 RVC_TRANSPOSE = 0
 RVC_F0_METHOD = "rmvpe"
+
+
+# ── Applio (TTS_PROVIDER == "applio" or RVC_PROVIDER == "applio") ─────────────────────────
+APPLIO_URL = "http://localhost:7870"
+
+# Applio TTS settings (TTS_PROVIDER == "applio")
+APPLIO_TTS_VOICE = "en-US-AriaNeural"  # EdgeTTS voice ShortName
+APPLIO_TTS_RATE = 0                    # speaking rate adjustment (-100 to 100)
+
+# Applio RVC settings (shared by TTS+RVC combined and standalone RVC)
+APPLIO_PTH_PATH = "/home/h3lp/Apps/tts/Applio/logs/CyreneAidenDawnHSR_e900_s122400/CyreneAidenDawnHSR_e900_s122400.pth" # path to the .pth model file
+APPLIO_INDEX_PATH = "/home/h3lp/Apps/tts/Applio/logs/IVF256_Flat_CyreneAidenDawnHSR/added_IVF256_Flat_nprobe_1_CyreneAidenDawnHSR_v2.index" # path to the .index file
+APPLIO_PITCH = 5                       # semitone pitch shift
+APPLIO_PROPOSED_PITCH = False
+APPLIO_PROPOSED_PITCH_THRESHOLD = 255.0
+APPLIO_INDEX_RATE = 0.5
+APPLIO_VOLUME_ENVELOPE = 1.0
+APPLIO_PROTECT = 0.5
+APPLIO_F0_METHOD = "rmvpe"
+APPLIO_EXPORT_FORMAT = "WAV"
+APPLIO_SPLIT_AUDIO = True
 
 
 # ── Voice presets (maps speaker names to TTS/RVC settings) ────────────────

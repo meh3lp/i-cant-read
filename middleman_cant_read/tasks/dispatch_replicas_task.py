@@ -18,11 +18,13 @@ log = logging.getLogger(__name__)
 # Task-name → config-key mapping for TTS providers
 _TTS_TASK_NAMES: dict[str, str] = {
     "kokoro_fastapi": "tasks.run_kokoro_fastapi",
+    "applio": "tasks.run_applio_tts",
 }
 
 # Task-name → config-key mapping for RVC providers
 _RVC_TASK_NAMES: dict[str, str] = {
     "rvc_gradio": "tasks.run_rvc_gradio",
+    "applio": "tasks.run_applio_rvc",
 }
 
 
@@ -55,7 +57,8 @@ def dispatch_replicas(prev_result: list) -> None:
         return
 
     rvc_task_name = None
-    if config.RVC_PROVIDER:
+    if config.RVC_PROVIDER and config.TTS_PROVIDER != "applio":
+        # Applio TTS already includes RVC; skip standalone RVC
         rvc_task_name = _RVC_TASK_NAMES.get(config.RVC_PROVIDER)
         if rvc_task_name is None:
             log.error("unsupported RVC provider: %s", config.RVC_PROVIDER)

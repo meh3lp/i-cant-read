@@ -6,10 +6,12 @@ from .cleanup_task import clean_text
 from .playback_task import enqueue_playback
 from .rvc_tasks import (
     run_rvc_gradio,
+    run_applio_rvc,
 )
 from .textfilter_task import filter_text
 from .tts_tasks import (
     run_kokoro_fastapi,
+    run_applio_tts,
 )
 from .initial_task import initialize_chain, initialize_frame_chain
 from .ocr_tasks import (
@@ -24,8 +26,10 @@ __all__ = (
     "clean_text",
     "enqueue_playback",
     "run_rvc_gradio",
+    "run_applio_rvc",
     "filter_text",
     "run_kokoro_fastapi",
+    "run_applio_tts",
     "initialize_chain",
     "initialize_frame_chain",
     "run_ollama_ocr_frame",

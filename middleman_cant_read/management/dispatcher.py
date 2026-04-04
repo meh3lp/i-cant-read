@@ -12,6 +12,7 @@ from tasks import (
     enqueue_playback,
     filter_text,
     run_kokoro_fastapi,
+    run_applio_tts,
     initialize_chain,
     initialize_frame_chain,
     run_ollama_ocr_frame,
@@ -42,6 +43,7 @@ class Dispatcher:
 
         tts_task_options = {
             "kokoro_fastapi": run_kokoro_fastapi,
+            "applio": run_applio_tts,
         }
         tts_task_module = tts_task_options.get(config.TTS_PROVIDER)
         if tts_task_module is None:

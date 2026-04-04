@@ -142,9 +142,11 @@ class ICantRead:
 
 
     def _init_rvc(self):
-        if config.RVC_PROVIDER:
+        if config.RVC_PROVIDER and config.TTS_PROVIDER != "applio":
+            # Applio TTS already includes RVC; skip standalone RVC init
             rvc_services = {
                 "rvc_gradio": ("services.rvc.rvc_gradio", "RVCGradio"),
+                "applio": ("services.rvc.rvc_applio", "RVCApplio"),
             }
             rvc_module = importlib.import_module(rvc_services[config.RVC_PROVIDER][0])
             rvc_class = getattr(rvc_module, rvc_services[config.RVC_PROVIDER][1])

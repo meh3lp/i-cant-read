@@ -38,6 +38,13 @@ def check_rvc() -> None:
     log.info("RVC OK  (%s)", config.RVC_URL)
 
 
+def check_applio() -> None:
+    """Verify Applio FastAPI server is responding."""
+    r = requests.get(f"{config.APPLIO_URL}/docs", timeout=5)
+    r.raise_for_status()
+    log.info("Applio OK  (%s)", config.APPLIO_URL)
+
+
 def _check_ollama_model(model_name: str, label: str) -> None:
     """Verify Ollama API is responding and *model_name* is available."""
     r = requests.get(f"{config.OLLAMA_URL}/api/tags", timeout=5)
@@ -90,6 +97,11 @@ def run_all_checks() -> None:
                 "FRAME_CAPTURE_METHOD": ("obs_plugin", "obs_websocket"),
             }
         },
+        "TTS_PROVIDER": {
+            "applio": {
+                "RVC_PROVIDER": ("applio",),
+            },
+        },
     }
     services = {
         "owocr": {
@@ -102,7 +114,11 @@ def run_all_checks() -> None:
         },
         "RVC": {
             "check": check_rvc,
-            "condition": lambda cfg: bool(cfg.RVC_PROVIDER),
+            "condition": lambda cfg: cfg.RVC_PROVIDER == "rvc_gradio",
+        },
+        "Applio": {
+            "check": check_applio,
+            "condition": lambda cfg: cfg.TTS_PROVIDER == "applio" or cfg.RVC_PROVIDER == "applio",
         },
         "Ollama cleanup": {
             "check": check_ollama_cleanup,
