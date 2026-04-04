@@ -49,8 +49,9 @@ class ICantRead:
         # Flush stale pipeline state from a previous run
         redis_client.delete(
             config.PLAYBACK_HASH_KEY,
-            config.TEXTFILTER_ZSET_KEY,
             config.SEQ_COUNTER_KEY,
+            config.HISTORY_HASH_KEY,
+            config.BATCH_COUNTER_KEY,
         )
         self._redis = redis_client
         log.info("redis connected, stale keys flushed")

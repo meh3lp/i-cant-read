@@ -7,10 +7,8 @@ State (the sliding window of recent texts) is stored in Redis so that
 multiple Celery workers can share the same dedup context.
 """
 
-import json
 import logging
 import re
-import time
 from difflib import SequenceMatcher
 
 import config
@@ -52,98 +50,44 @@ def _is_readable_token(tok: str) -> bool:
 
 
 class TextFilter:
-    """Stateful filter that deduplicates and cleans incoming OCR text.
+    """Stateless filter that deduplicates and cleans incoming OCR text.
 
-    Call :meth:`filter` for every incoming OCR string.  It returns the
-    (possibly trimmed) text to keep, or *None* to skip the entry entirely.
-
-    When *redis_client* is provided the sliding window is stored in a
-    Redis sorted set so that state is shared across Celery workers.
-    Otherwise an in-memory list is used (handy for tests).
+    All state (the sliding window of previous texts) is provided by the
+    caller, read from the universal pipeline history.
     """
 
-    def __init__(self, redis_client=None) -> None:
-        self._max_win = getattr(config, "TEXT_FILTER_WINDOW_SIZE", 10)
-        self._redis = redis_client
+    @staticmethod
+    def filter(text: str, previous_texts: list[str]) -> str | None:
+        """Return cleaned text or *None* if the text should be dropped.
 
-        # In-memory fallback when Redis is not available (tests, etc.)
-        self._mem_window: list[tuple[float, str]] = []
-
-    # ── window helpers ───────────────────────────────────────────────────
-
-    def _zset_key(self) -> str:
-        return getattr(config, "TEXTFILTER_ZSET_KEY", "cantread:textfilter:window")
-
-    def _lock_key(self) -> str:
-        return getattr(config, "TEXTFILTER_LOCK_KEY", "cantread:textfilter:lock")
-
-    def _get_window(self) -> list[tuple[float, str]]:
-        """Return list of ``(timestamp, text)`` from the sliding window."""
-        if self._redis is None:
-            return list(self._mem_window)
-
-        # Redis sorted set: member = json-encoded text, score = timestamp
-        raw = self._redis.zrange(self._zset_key(), 0, -1, withscores=True)
-        return [(score, json.loads(member)) for member, score in raw]
-
-    def _add_to_window(self, text: str) -> None:
-        """Append *text* to the sliding window."""
-        ts = time.time()
-
-        if self._redis is None:
-            self._mem_window.append((ts, text))
-            if len(self._mem_window) > self._max_win:
-                self._mem_window = self._mem_window[-self._max_win:]
-            return
-
-        pipe = self._redis.pipeline()
-        pipe.zadd(self._zset_key(), {json.dumps(text): ts})
-        # Trim to keep only the most recent entries
-        pipe.zremrangebyrank(self._zset_key(), 0, -(self._max_win + 1))
-        pipe.execute()
-
-    # ── public API ───────────────────────────────────────────────────────
-
-    def filter(self, text: str) -> str | None:
-        """Return cleaned text or *None* if the text should be dropped."""
+        *previous_texts* is the ordered list of recent texts from the
+        pipeline history (oldest-first).
+        """
         if not getattr(config, "TEXT_FILTER_ENABLED", True):
             return text
 
-        # When using Redis, wrap the whole filter in a lock so concurrent
-        # workers don't make inconsistent dedup decisions.
-        if self._redis is not None:
-            import redis as _redis_mod
-            lock = _redis_mod.lock.Lock(self._redis, self._lock_key(), timeout=5)
-            with lock:
-                return self._do_filter(text)
-        else:
-            return self._do_filter(text)
-
-    def _do_filter(self, text: str) -> str | None:
-        """Core filter logic (called inside the lock when Redis is used)."""
         # Stage A — noise / garbled rejection
-        if self._is_noise(text):
+        if TextFilter._is_noise(text):
             log.debug("filter: rejected as noise: %s", text[:60])
             return None
 
         # Stage B — fuzzy dedup against recent window
-        if self._is_fuzzy_duplicate(text):
+        if TextFilter._is_fuzzy_duplicate(text, previous_texts):
             log.debug("filter: rejected as fuzzy dup: %s", text[:60])
             return None
 
         # Stage C — overlap extraction (keep only new sentences)
-        text = self._extract_new_content(text)
+        text = TextFilter._extract_new_content(text, previous_texts)
         if not text:
             log.debug("filter: nothing new after overlap removal")
             return None
 
-        # Accept — add to window
-        self._add_to_window(text)
         return text
 
     # ── Stage A: noise rejection ─────────────────────────────────────────
 
-    def _is_noise(self, text: str) -> bool:
+    @staticmethod
+    def _is_noise(text: str) -> bool:
         min_len = getattr(config, "TEXT_FILTER_MIN_LENGTH", 15)
         blocklist: list[str] = getattr(config, "TEXT_FILTER_UI_BLOCKLIST", [])
 
@@ -176,9 +120,10 @@ class TextFilter:
 
     # ── Stage B: fuzzy dedup ─────────────────────────────────────────────
 
-    def _is_fuzzy_duplicate(self, text: str) -> bool:
+    @staticmethod
+    def _is_fuzzy_duplicate(text: str, previous_texts: list[str]) -> bool:
         threshold = getattr(config, "TEXT_FILTER_SIMILARITY_THRESHOLD", 0.85)
-        for _ts, prev in self._get_window():
+        for prev in previous_texts:
             sim = SequenceMatcher(None, prev, text).ratio()
             if sim >= threshold:
                 # Allow through if the new text is substantially longer
@@ -194,18 +139,18 @@ class TextFilter:
 
     # ── Stage C: overlap extraction ──────────────────────────────────────
 
-    def _extract_new_content(self, text: str) -> str | None:
-        """If *text* overlaps heavily with the most recent window entry,
+    @staticmethod
+    def _extract_new_content(text: str, previous_texts: list[str]) -> str | None:
+        """If *text* overlaps heavily with a recent entry,
         return only the sentences that are new."""
-        window = self._get_window()
-        if not window:
+        if not previous_texts:
             return text
 
         overlap_thresh = getattr(config, "TEXT_FILTER_OVERLAP_THRESHOLD", 0.5)
         sent_sim_thresh = 0.8  # per-sentence similarity for removal
 
         # Compare against the most recent entry only
-        _ts, prev = window[-1]
+        prev = previous_texts[-1]
         sim = SequenceMatcher(None, prev, text).ratio()
 
         if sim < overlap_thresh:

@@ -19,6 +19,7 @@ from tasks import (
     dedup_ocr,
     dispatch_replicas,
 )
+from tasks.utils.history import PipelineHistory
 if typing.TYPE_CHECKING:
     from management.i_cant_read import ICantRead
 
@@ -98,6 +99,10 @@ class Dispatcher:
         """
         seq = self._next_seq()
         replica = {"speaker": "Narrator", "text": text}
+
+        history = PipelineHistory(self.redis)
+        batch = PipelineHistory.next_batch(self.redis)
+        history.write_entry(seq, text, "Narrator", batch)
 
         tasks = [initialize_chain.si((replica, seq))]
         tasks.extend(self._build_text_pipeline())

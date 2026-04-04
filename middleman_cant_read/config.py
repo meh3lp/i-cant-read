@@ -28,7 +28,8 @@ FRAME_CAPTURE_METHOD = "obs_plugin"
 OLLAMA_TEXT_CLEANUP_ENABLED = False  # First use AI to fix misrecognized characters
                                # and check if text makes sense
 OCR_DEDUP_ENABLED = True     # Then skip duplicate texts
-TEXT_FILTER_ENABLED = True   # Then run text through filters
+TEXT_FILTER_ENABLED = False   # Then run text through filters
+OCR_PASSES = 2
 
 
 # ── owocr (OCR_PROVIDER in ("owocr_send_frames", "owocr_receive_only")) ────────────────────────────────────────────────────────────────────
@@ -81,26 +82,46 @@ OLLAMA_KEEP_ALIVE = "5m"
 # ── Ollama · vision OCR (OCR_PROVIDER == "ollama") ─────────────────────
 OLLAMA_OCR_MODEL = "qwen3.5:0.8b"
 OLLAMA_OCR_SYSTEM_PROMPT = """
-You are an OCR agent. Extract all spoken text from the image and return it as JSON.
+You are an OCR agent. Extract all text from the image and return it as JSON.
 
-OUTPUT FORMAT:
-{"replicas": [{"speaker": "<name>", "text": "<text>"}, ...]}
+STEP 1 — CLASSIFY THE SCREEN:
+Determine which type the screen is:
+- "dialogue": A conversation scene with speech bubbles, character portraits, or a chat-style UI.
+- "book": A full-screen document, note, letter, diary, or codex entry — typically with a title, 
+  body paragraphs, and no speech bubbles.
 
-SPEAKER IDENTIFICATION RULES:
-1. Look for name boxes, labels, or header text in the UI — these identify the speaker.
-2. In chat-style UIs: bubbles on the LEFT belong to the named contact (from the header/label).
-   Bubbles on the RIGHT belong to the player. To find the player's name, check if any LEFT-side bubble directly addresses them by name (e.g. "Endmin, you should...") — if so, use that name.
-   Consecutive bubbles from the same side belong to the same speaker until a bubble from the opposite side appears.
-   Only fall back to Unknown1 if no such address exists.
-3. If a speaker still cannot be identified, use Unknown1, Unknown2, etc. per unique speaker.
-4. Use "Narrator" ONLY for text physically visible in the image that is not inside a character speech bubble — e.g. floating captions or scene text. NEVER use it for background knowledge, game lore, or anything not literally readable in the image.
+Set the top-level "text_type" field accordingly.
 
-TEXT RULES:
-5. Preserve original wording exactly. No paraphrasing, no markdown, no formatting.
-6. Join wrapped lines into a single line.
-7. Transcribe only clearly visible text. Skip obscured or unreadable portions.
-8. If no readable text exists, return: {"replicas": []}
-9. Transcribe ONLY text that is physically visible in the image. Do not add explanations, scene descriptions, game knowledge, or any content not present as readable text. Once all visible text is captured, stop immediately.
+STEP 2 — EXTRACT TEXT:
+
+For "dialogue" screens:
+- OUTPUT FORMAT: {"text_type": "dialogue", "replicas": [{"speaker": "<name>", "text": "<text>"}, ...]}
+- Speaker identification:
+  a. Read name from visible UI elements (name boxes, labels, header).
+  b. Use "Narrator" ONLY for text physically visible in the image that is outside all speech 
+     bubbles (floating captions, scene labels). Never for in-character dialogue, even if 
+     analytical or expository.
+
+For "book" screens:
+- OUTPUT FORMAT: {"text_type": "book", "replicas": [{"text": "<text>"}, ...]}
+- Each replica = one logical block of text (paragraph, heading, or caption).
+- No "speaker" key. Preserve headings, dates, and section labels as their own replica.
+- Preserve original wording exactly, including punctuation and quoted speech within the text.
+
+SHARED RULES (apply to both types):
+- Transcribe ONLY text physically visible in the image. No game knowledge, lore, or invention.
+- Preserve original wording exactly. No paraphrasing, no markdown, no formatting.
+- Join wrapped lines into a single line.
+- Transcribe only clearly visible text. Skip obscured or unreadable portions.
+- Ignore UI chrome: version strings, UIDs, button labels (Back, Scroll, Auto), watermarks.
+- Once all visible text is captured, stop. Output one JSON object with one "replicas" key.
+- If no readable text exists, return: {"text_type": "dialogue", "replicas": []}
+
+IMPORTANT: Transcribe ONLY what is visible. Do not copy the examples below.
+
+EXAMPLES (format reference only):
+Dialogue: {"text_type": "dialogue", "replicas": [{"speaker": "Sampo", "text": "Me? You guys scared me to death."}, {"speaker": "Narrator", "text": "A wanted poster hangs on the wall."}]}
+Book: {"text_type": "book", "replicas": [{"text": "Diary of a Lost Soldier"}, {"text": "Day 1. We marched through the rain for six hours."}, {"text": "Day 2. Rations are running low."}]}
 
 Return only the JSON object. No explanation, no extra text.
 """.strip()
@@ -149,7 +170,7 @@ OLLAMA_CLEANUP_HISTORY_SIZE = 5  # recent user/assistant exchanges to include
 
 
 # ── OCR deduplication (OCR_DEDUP_ENABLED is True) ──────────────────────────
-OCR_DEDUP_WINDOW_SIZE = 5              # number of recent OCR texts to keep
+OCR_DEDUP_WINDOW_SIZE = 20              # number of recent OCR texts to keep
 OCR_DEDUP_SIMILARITY_THRESHOLD = 0.95  # whole-text ratio above this → near-dup skip
 OCR_DEDUP_SEGMENT_THRESHOLD = 0.85     # per-segment similarity (ratio or containment)
 OCR_DEDUP_MIN_SEGMENT_LENGTH = 10      # ignore segments shorter than this (garbled / UI noise)
@@ -249,9 +270,5 @@ REDIS_URL = "redis://localhost:6379/0"
 # Redis keys used by the pipeline
 PLAYBACK_HASH_KEY = "cantread:playback:results"   # hash: seq_num → wav_path | "SKIP"
 SEQ_COUNTER_KEY = "cantread:seq_counter"           # string: next sequence number to issue
-TEXTFILTER_ZSET_KEY = "cantread:textfilter:window" # sorted set: text → timestamp
-TEXTFILTER_LOCK_KEY = "cantread:textfilter:lock"   # distributed lock for filter state
-OLLAMA_HISTORY_KEY = "cantread:ollama:history"      # list: recent cleanup exchanges (JSON)
-
-OCR_DEDUP_LIST_KEY_PREFIX = "cantread:ocr_dedup:window"  # per-speaker list: recent OCR texts for dedup
-OCR_DEDUP_LOCK_KEY_PREFIX = "cantread:ocr_dedup:lock"    # per-speaker distributed lock for dedup
+HISTORY_HASH_KEY = "cantread:history"              # hash: seq_num → JSON entry (universal history)
+BATCH_COUNTER_KEY = "cantread:batch_counter"       # string: next batch number to issue

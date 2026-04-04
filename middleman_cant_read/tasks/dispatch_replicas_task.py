@@ -11,6 +11,7 @@ from celery import chain
 
 import config
 from tasks.celery_app import app
+from tasks.utils.history import PipelineHistory
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +46,8 @@ def dispatch_replicas(prev_result: list) -> None:
         return
 
     r = _redis.Redis.from_url(config.REDIS_URL, decode_responses=True)
+    history = PipelineHistory(r)
+    batch = PipelineHistory.next_batch(r)
 
     tts_task_name = _TTS_TASK_NAMES.get(config.TTS_PROVIDER)
     if tts_task_name is None:
@@ -60,6 +63,8 @@ def dispatch_replicas(prev_result: list) -> None:
 
     for replica in replicas:
         seq = _next_seq(r)
+        speaker = replica.get("speaker", "Narrator")
+        history.write_entry(seq, replica.get("text", ""), speaker, batch)
         replica_arg = (replica, seq)
 
         tasks = [app.signature("tasks.initialize_chain", args=(replica_arg,))]

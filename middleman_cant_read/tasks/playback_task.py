@@ -6,6 +6,7 @@ import redis as _redis
 
 import config
 from tasks.celery_app import app
+from tasks.utils.history import PipelineHistory
 
 log = logging.getLogger(__name__)
 
@@ -21,6 +22,8 @@ def enqueue_playback(prev_result: list) -> int:
 
     r = _redis.Redis.from_url(config.REDIS_URL, decode_responses=True)
     r.hset(config.PLAYBACK_HASH_KEY, str(seq_num), wav_path)
+
+    PipelineHistory(r).update_status(seq_num, "queued")
     log.info("playback: enqueued seq=%d → %s", seq_num, wav_path)
 
     return seq_num

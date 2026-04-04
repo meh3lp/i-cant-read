@@ -22,7 +22,6 @@ the full sentence "It was an epoch beyond comprehension, one we can
 never return to — The Golden Age."
 """
 
-import json
 import logging
 import re
 from difflib import SequenceMatcher
@@ -224,72 +223,20 @@ def _extract_new_suffix(old: str, new: str) -> str | None:
 
 
 class OCRDedup:
-    """Stateful deduplicator for OCR text.
+    """Stateless deduplicator for OCR text.
 
-    Backed by a Redis list when *redis_client* is provided, otherwise
-    falls back to an in-memory list (handy for tests).
+    All state (the sliding window of previous texts) is provided by the
+    caller, read from the universal pipeline history.
     """
 
-    def __init__(self, redis_client=None) -> None:
-        self._redis = redis_client
-        self._mem_window: list[str] = []  # in-memory fallback
-
-    # ── storage helpers ──────────────────────────────────────────────────
-
     @staticmethod
-    def _list_key(speaker: str = "") -> str:
-        prefix = getattr(config, "OCR_DEDUP_LIST_KEY_PREFIX", "cantread:ocr_dedup:window")
-        if speaker:
-            return f"{prefix}:{speaker}"
-        return prefix
-
-    @staticmethod
-    def _lock_key(speaker: str = "") -> str:
-        prefix = getattr(config, "OCR_DEDUP_LOCK_KEY_PREFIX", "cantread:ocr_dedup:lock")
-        if speaker:
-            return f"{prefix}:{speaker}"
-        return prefix
-
-    def _get_window(self, speaker: str = "") -> list[str]:
-        """Return the most recent OCR texts (oldest → newest)."""
-        if self._redis is None:
-            return list(self._mem_window)
-        raw = self._redis.lrange(self._list_key(speaker), 0, -1)
-        return [json.loads(entry) for entry in raw]
-
-    def _push(self, text: str, speaker: str = "") -> None:
-        """Append *text* and trim the window to the configured size."""
-        max_win = getattr(config, "OCR_DEDUP_WINDOW_SIZE", 5)
-        if self._redis is None:
-            self._mem_window.append(text)
-            if len(self._mem_window) > max_win:
-                self._mem_window = self._mem_window[-max_win:]
-            return
-        pipe = self._redis.pipeline()
-        pipe.rpush(self._list_key(speaker), json.dumps(text))
-        pipe.ltrim(self._list_key(speaker), -max_win, -1)
-        pipe.execute()
-
-    # ── public API ───────────────────────────────────────────────────────
-
-    def dedup(self, text: str, speaker: str = "") -> str | None:
+    def dedup(text: str, previous_texts: list[str]) -> str | None:
         """Return deduplicated text, or *None* if fully duplicated.
 
-        When *speaker* is provided, deduplication is scoped to that
-        speaker's window only.
+        *previous_texts* is the ordered list of raw OCR texts from the
+        pipeline history (oldest-first).
         """
-        if self._redis is not None:
-            import redis as _redis_mod
-
-            lock = _redis_mod.lock.Lock(self._redis, self._lock_key(speaker), timeout=5)
-            with lock:
-                return self._do_dedup(text, speaker)
-        return self._do_dedup(text, speaker)
-
-    def _do_dedup(self, text: str, speaker: str = "") -> str | None:
-        window = self._get_window(speaker)
-        # Always store the raw text so the window stays current.
-        self._push(text, speaker)
+        window = previous_texts
 
         if not window:
             return text
